@@ -1,4 +1,4 @@
-module tusd
+module goupload
 
 go 1.20
 
