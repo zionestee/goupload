@@ -8,8 +8,11 @@ import (
 	"io"
 	"mime/multipart"
 	"strings"
+	"time"
 
 	"github.com/eventials/go-tus"
+	"github.com/globalsign/mgo"
+	"github.com/globalsign/mgo/bson"
 )
 
 type uploader struct {
@@ -21,6 +24,7 @@ type Uploader interface {
 	UploadFormFile(f interface{}) error
 	UploadFormFiles(f interface{}) error
 	UploadFormByte(f interface{}) error
+	CreateFileDB(id string, size int64) error
 }
 
 func NewUploader() Uploader {
@@ -28,6 +32,7 @@ func NewUploader() Uploader {
 	if err != nil {
 		fmt.Println(err.Error())
 	}
+
 	return uploader{client}
 }
 
@@ -48,6 +53,7 @@ func (c uploader) UploadFile(f interface{}) error {
 	}
 	return nil
 }
+
 func (c uploader) GogoUpload(b []byte) error {
 
 	upload := tus.NewUploadFromBytes(b)
@@ -56,7 +62,13 @@ func (c uploader) GogoUpload(b []byte) error {
 		return err
 	}
 
-	uploader.Upload()
+	fmt.Println(uploader)
+
+	err = uploader.Upload()
+	if err != nil {
+		return err
+	}
+	c.CreateFileDB("909290390203", 320)
 	return nil
 }
 func (c uploader) UploadFormFile(f interface{}) error {
@@ -74,7 +86,7 @@ func (c uploader) UploadFormFile(f interface{}) error {
 	}
 
 	c.GogoUpload(buf.Bytes())
-	fmt.Printf("%s : upload filesuccess !!\n", fileHeader.Filename)
+	fmt.Printf("%s : upload filesuccess 123 !!\n", fileHeader.Filename)
 	return nil
 }
 func (c uploader) UploadFormFiles(f interface{}) error {
@@ -98,4 +110,38 @@ func (c uploader) UploadFormByte(f interface{}) error {
 
 	c.GogoUpload(imageDataBase64)
 	return nil
+}
+func (c uploader) CreateFileDB(id string, size int64) error {
+
+	type File struct {
+		ID        bson.ObjectId `json:"id" bson:"_id,omitempty"`
+		Key       string        `json:"key" bson:"key"`
+		Name      string        `json:"name" bson:"name"`
+		Size      int64         `json:"size" bson:"size"`
+		CreatedAt time.Time     `json:"created_at" bson:"created_at"`
+		UpdatedAt time.Time     `json:"updated_at" bson:"updated_at"`
+	}
+	fmt.Println(">>>>>>>>>>>>>>>>>", id)
+	fmt.Println(">>>>>>>>>>>>>>>>>", size)
+
+	file := File{
+		Key:       id,
+		Name:      "",
+		Size:      size,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	const (
+		mongodb    = "mongodb://localhost:27017"
+		DBName     = "luzio-upload"
+		collection = "files"
+	)
+	ConnectionDB, err := mgo.Dial(mongodb)
+	if err != nil {
+		return err
+	}
+	defer ConnectionDB.Close()
+
+	return ConnectionDB.DB(DBName).C(collection).Insert(file)
 }
