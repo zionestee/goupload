@@ -12,13 +12,11 @@ import (
 
 	"github.com/globalsign/mgo"
 	"github.com/globalsign/mgo/bson"
-	"github.com/zionestee/goupload/lib"
 	"github.com/zionestee/goupload/tus"
 )
 
 type uploader struct {
-	client  *tus.Client
-	client2 lib.Client2
+	client *tus.Client
 }
 type FileGogo struct {
 	Filename string
