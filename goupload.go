@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/url"
 	"strings"
 
 	"github.com/zionestee/goupload/tus"
@@ -150,6 +151,27 @@ func (c uploader) UploadFormByte(f interface{}) ([]MetaFile, error) {
 		return nil, errors.New("invalid file format")
 	}
 
+	// imageDataBase64 := []byte{}
+
+	// urlString := "https://www.example.com/path/to/page"
+
+	// ใช้ ParseRequestURI เพื่อตรวจสอบว่า string เป็น URL หรือไม่
+	u, err := url.ParseRequestURI(file)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		fmt.Printf("%s ไม่เป็น URL ที่ถูกต้อง\n", file)
+	} else {
+		fmt.Printf("%s เป็น URL ที่ถูกต้อง\n", file)
+		// response, err := http.Get(file)
+		// if err != nil {
+		// 	return nil, err
+		// }
+		// defer response.Body.Close()
+
+		// // imageDataBase64 = response.Body
+
+		// imageDataBase64, err := io.ReadAll(response.Body)
+	}
+
 	splitNameBase64 := strings.Split(file, "base64,")
 	imageDataBase64, _ := base64.StdEncoding.DecodeString(splitNameBase64[1])
 
@@ -164,6 +186,7 @@ func (c uploader) UploadFormByte(f interface{}) ([]MetaFile, error) {
 	meta = append(meta, m)
 	fmt.Println("base64 : upload filesuccess !!")
 	return meta, nil
+	// return nil, nil
 }
 
 func (c uploader) GogoUpload(b []byte, fileHeader *FileGogo) error {
