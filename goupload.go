@@ -3,7 +3,6 @@ package goupload
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -25,7 +24,7 @@ type Cfg struct {
 	StorageUrl  string
 }
 type FileGogo struct {
-	Filename    string
+	FileName    string
 	Size        int64
 	ContentType string
 	Path        string
@@ -34,16 +33,12 @@ type UploadParams struct {
 	Folder string
 	Body   interface{}
 }
-type MetaFile struct {
-	Path      string
-	Extension string
-}
 type Uploader interface {
-	UploadFile(UploadParams) ([]MetaFile, error)
+	UploadFile(UploadParams) ([]FileGogo, error)
+	UploadFormFile(interface{}) ([]FileGogo, error)
+	UploadFormFiles(interface{}) ([]FileGogo, error)
+	UploadFormByte(interface{}) ([]FileGogo, error)
 	GogoUpload([]byte, *FileGogo) error
-	UploadFormFile(interface{}) ([]MetaFile, error)
-	UploadFormFiles(interface{}) ([]MetaFile, error)
-	UploadFormByte(interface{}) ([]MetaFile, error)
 }
 
 func NewUploader(cfg Cfg) Uploader {
@@ -55,7 +50,7 @@ func NewUploader(cfg Cfg) Uploader {
 	return uploader{client: client, folder: "", storageUrl: cfg.StorageUrl}
 }
 
-func (c uploader) UploadFile(params UploadParams) ([]MetaFile, error) {
+func (c uploader) UploadFile(params UploadParams) ([]FileGogo, error) {
 
 	f := params.Body
 	c.folder = params.Folder
@@ -74,7 +69,7 @@ func (c uploader) UploadFile(params UploadParams) ([]MetaFile, error) {
 		return nil, errors.New("file type not supported")
 	}
 }
-func (c uploader) UploadFiles(params UploadParams) ([]MetaFile, error) {
+func (c uploader) UploadFiles(params UploadParams) ([]FileGogo, error) {
 
 	f := params.Body
 	c.folder = params.Folder
@@ -94,7 +89,7 @@ func (c uploader) UploadFiles(params UploadParams) ([]MetaFile, error) {
 	}
 }
 
-func (c uploader) UploadFormFile(f interface{}) ([]MetaFile, error) {
+func (c uploader) UploadFormFile(f interface{}) ([]FileGogo, error) {
 
 	fileHeader, ok := f.(*multipart.FileHeader)
 	if !ok {
@@ -110,7 +105,7 @@ func (c uploader) UploadFormFile(f interface{}) ([]MetaFile, error) {
 
 	ContentType := fileHeader.Header.Values("Content-Type")
 	fileGoHeader := FileGogo{
-		Filename:    fileHeader.Filename,
+		FileName:    fileHeader.Filename,
 		Size:        fileHeader.Size,
 		ContentType: ContentType[0],
 	}
@@ -119,90 +114,80 @@ func (c uploader) UploadFormFile(f interface{}) ([]MetaFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	meta := []MetaFile{}
-	m := MetaFile{
-		Path:      fileGoHeader.Path,
-		Extension: fileGoHeader.ContentType,
-	}
-	meta = append(meta, m)
+	meta := []FileGogo{}
+	meta = append(meta, fileGoHeader)
 	fmt.Printf("%s : upload filesuccess !!\n", fileHeader.Filename)
 	return meta, nil
 }
-func (c uploader) UploadFormFiles(f interface{}) ([]MetaFile, error) {
+func (c uploader) UploadFormFiles(f interface{}) ([]FileGogo, error) {
 	files, ok := f.([]*multipart.FileHeader)
 	if !ok {
 		return nil, errors.New("invalid file format")
 	}
-	meta := []MetaFile{}
+	meta := []FileGogo{}
 	for _, fileHeader := range files {
 		metaFile, err := c.UploadFormFile(fileHeader)
 		if err != nil {
 			return nil, err
 		}
-		m := MetaFile{
-			Path:      metaFile[0].Path,
-			Extension: metaFile[0].Extension,
-		}
-		meta = append(meta, m)
+		meta = append(meta, metaFile[0])
 	}
 	return meta, nil
 }
-func (c uploader) UploadFormByte(f interface{}) ([]MetaFile, error) {
+func (c uploader) UploadFormByte(f interface{}) ([]FileGogo, error) {
 	fileString, ok := f.(string)
 	if !ok {
 		return nil, errors.New("invalid file format")
 	}
 
-	imageDataBase64 := []byte{}
-
-	// urlString := "https://www.example.com/path/to/page"
-
-	// ใช้ ParseRequestURI เพื่อตรวจสอบว่า string เป็น URL หรือไม่
+	var imageDataBase64 = []byte{}
+	var fileName = ""
 	u, err := url.ParseRequestURI(fileString)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		/* เป็น base 64 */
-		fmt.Printf("%s ไม่เป็น URL ที่ถูกต้อง\n", fileString)
+		splitNameBase64 := strings.Split(fileString, "base64,")
+		imageDataBase64, _ = base64.StdEncoding.DecodeString(splitNameBase64[1])
+		if err != nil {
+			fmt.Println("ไม่สามารถถอดรหัส Base64 ได้:", err)
+			return nil, err
+		}
 	} else {
 		/* url */
-		fmt.Printf("%s เป็น URL ที่ถูกต้อง\n", fileString)
 		response, err := http.Get(fileString)
 		if err != nil {
 			return nil, err
 		}
 		defer response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			fmt.Printf("ไม่สามารถดาวน์โหลดรูปภาพ สถานะ: %s\n", response.Status)
+			return nil, err
+		}
 
-		// imageDataBase64 = response.Body
-
+		fileName = getFileNameFromURL(fileString)
 		imageDataBase64, err = io.ReadAll(response.Body)
 		if err != nil {
 			return nil, err
 		}
 	}
-	marshaled, _ := json.MarshalIndent(imageDataBase64, "", "   ")
-	fmt.Println(string(marshaled))
 
-	splitNameBase64 := strings.Split(fileString, "base64,")
-	imageDataBase64, _ = base64.StdEncoding.DecodeString(splitNameBase64[1])
-
-	fileGoHeader := FileGogo{}
-
-	c.GogoUpload(imageDataBase64, &fileGoHeader)
-	meta := []MetaFile{}
-	m := MetaFile{
-		Path:      fileGoHeader.Path,
-		Extension: fileGoHeader.ContentType,
+	contentType := http.DetectContentType(imageDataBase64)
+	fileGoHeader := FileGogo{
+		FileName:    fileName,
+		Size:        int64(len(imageDataBase64)),
+		ContentType: contentType,
 	}
-	meta = append(meta, m)
+	c.GogoUpload(imageDataBase64, &fileGoHeader)
+	meta := []FileGogo{}
+	meta = append(meta, fileGoHeader)
 	fmt.Println("base64 : upload filesuccess !!")
 	return meta, nil
-	// return nil, nil
 }
 
 func (c uploader) GogoUpload(b []byte, fileHeader *FileGogo) error {
 
 	metadata := map[string]string{
 		"folder":       c.folder,
-		"name":         fileHeader.Filename,
+		"name":         fileHeader.FileName,
 		"content-type": fileHeader.ContentType,
 	}
 	upload := tus.NewUploadFromBytes(b, metadata)
@@ -219,4 +204,8 @@ func (c uploader) GogoUpload(b []byte, fileHeader *FileGogo) error {
 		return err
 	}
 	return nil
+}
+func getFileNameFromURL(url string) string {
+	parts := strings.Split(url, "/")
+	return parts[len(parts)-1]
 }
