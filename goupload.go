@@ -3,10 +3,12 @@ package goupload
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -146,34 +148,41 @@ func (c uploader) UploadFormFiles(f interface{}) ([]MetaFile, error) {
 	return meta, nil
 }
 func (c uploader) UploadFormByte(f interface{}) ([]MetaFile, error) {
-	file, ok := f.(string)
+	fileString, ok := f.(string)
 	if !ok {
 		return nil, errors.New("invalid file format")
 	}
 
-	// imageDataBase64 := []byte{}
+	imageDataBase64 := []byte{}
 
 	// urlString := "https://www.example.com/path/to/page"
 
 	// ใช้ ParseRequestURI เพื่อตรวจสอบว่า string เป็น URL หรือไม่
-	u, err := url.ParseRequestURI(file)
+	u, err := url.ParseRequestURI(fileString)
 	if err != nil || u.Scheme == "" || u.Host == "" {
-		fmt.Printf("%s ไม่เป็น URL ที่ถูกต้อง\n", file)
+		/* เป็น base 64 */
+		fmt.Printf("%s ไม่เป็น URL ที่ถูกต้อง\n", fileString)
 	} else {
-		fmt.Printf("%s เป็น URL ที่ถูกต้อง\n", file)
-		// response, err := http.Get(file)
-		// if err != nil {
-		// 	return nil, err
-		// }
-		// defer response.Body.Close()
+		/* url */
+		fmt.Printf("%s เป็น URL ที่ถูกต้อง\n", fileString)
+		response, err := http.Get(fileString)
+		if err != nil {
+			return nil, err
+		}
+		defer response.Body.Close()
 
-		// // imageDataBase64 = response.Body
+		// imageDataBase64 = response.Body
 
-		// imageDataBase64, err := io.ReadAll(response.Body)
+		imageDataBase64, err = io.ReadAll(response.Body)
+		if err != nil {
+			return nil, err
+		}
 	}
+	marshaled, _ := json.MarshalIndent(imageDataBase64, "", "   ")
+	fmt.Println(string(marshaled))
 
-	splitNameBase64 := strings.Split(file, "base64,")
-	imageDataBase64, _ := base64.StdEncoding.DecodeString(splitNameBase64[1])
+	splitNameBase64 := strings.Split(fileString, "base64,")
+	imageDataBase64, _ = base64.StdEncoding.DecodeString(splitNameBase64[1])
 
 	fileGoHeader := FileGogo{}
 
