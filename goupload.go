@@ -3,6 +3,7 @@ package goupload
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,8 +21,9 @@ type uploader struct {
 	storageUrl string
 }
 type Cfg struct {
-	StorageHost string
-	StorageUrl  string
+	Endpoint        string
+	StorageUrl      string
+	SecretAccessKey string
 }
 type FileGogo struct {
 	FileName    string
@@ -33,8 +35,13 @@ type UploadParams struct {
 	Folder string
 	Body   interface{}
 }
+type DeleteParams struct {
+	Key []string
+}
+
 type Uploader interface {
-	UploadFile(UploadParams) ([]FileGogo, error)
+	Upload(UploadParams) ([]FileGogo, error)
+	DeleteObjects(DeleteParams) (string, error)
 	UploadFormFile(interface{}) ([]FileGogo, error)
 	UploadFormFiles(interface{}) ([]FileGogo, error)
 	UploadFormByte(interface{}) ([]FileGogo, error)
@@ -42,7 +49,7 @@ type Uploader interface {
 }
 
 func NewUploader(cfg Cfg) Uploader {
-	client, err := tus.NewClient(cfg.StorageHost, nil)
+	client, err := tus.NewClient(cfg.Endpoint, nil)
 
 	if err != nil {
 		fmt.Println(err.Error())
@@ -50,7 +57,7 @@ func NewUploader(cfg Cfg) Uploader {
 	return uploader{client: client, folder: "", storageUrl: cfg.StorageUrl}
 }
 
-func (c uploader) UploadFile(params UploadParams) ([]FileGogo, error) {
+func (c uploader) Upload(params UploadParams) ([]FileGogo, error) {
 
 	f := params.Body
 	c.folder = params.Folder
@@ -208,4 +215,32 @@ func (c uploader) GogoUpload(b []byte, fileHeader *FileGogo) error {
 func getFileNameFromURL(url string) string {
 	parts := strings.Split(url, "/")
 	return parts[len(parts)-1]
+}
+func (c uploader) DeleteObjects(params DeleteParams) (string, error) {
+
+	url := "https://storage.nutritionprofess.com/file"
+
+	jsonBody, _ := json.Marshal(params)
+
+	request, err := http.NewRequest("DELETE", url, bytes.NewBuffer(jsonBody))
+
+	if err != nil {
+		return "", err
+	}
+
+	client := &http.Client{}
+	response, err := client.Do(request)
+
+	if err != nil {
+		return "", err
+	}
+	defer response.Body.Close()
+
+	b_byte, err := io.ReadAll(response.Body)
+	if err != nil {
+		return "", err
+	}
+	fmt.Println(string(b_byte))
+
+	return "deleted", nil
 }
