@@ -21,7 +21,7 @@ type uploader struct {
 	storageUrl string
 }
 type Cfg struct {
-	Endpoint        string
+	EndPoint        string
 	StorageUrl      string
 	SecretAccessKey string
 }
@@ -38,10 +38,14 @@ type UploadParams struct {
 type DeleteParams struct {
 	Key []string
 }
+type jsonResponse struct {
+	Error string `json:"error,omitempty"`
+	Data  any    `json:"data,omitempty"`
+}
 
 type Uploader interface {
 	Upload(UploadParams) ([]FileGogo, error)
-	DeleteObjects(DeleteParams) (string, error)
+	DeleteObjects(DeleteParams) (interface{}, error)
 	UploadFormFile(interface{}) ([]FileGogo, error)
 	UploadFormFiles(interface{}) ([]FileGogo, error)
 	UploadFormByte(interface{}) ([]FileGogo, error)
@@ -49,7 +53,7 @@ type Uploader interface {
 }
 
 func NewUploader(cfg Cfg) Uploader {
-	client, err := tus.NewClient(cfg.Endpoint, nil)
+	client, err := tus.NewClient(cfg.EndPoint, nil)
 
 	if err != nil {
 		fmt.Println(err.Error())
@@ -216,31 +220,35 @@ func getFileNameFromURL(url string) string {
 	parts := strings.Split(url, "/")
 	return parts[len(parts)-1]
 }
-func (c uploader) DeleteObjects(params DeleteParams) (string, error) {
-
-	url := "https://storage.nutritionprofess.com/file"
+func (c uploader) DeleteObjects(params DeleteParams) (interface{}, error) {
 
 	jsonBody, _ := json.Marshal(params)
-
-	request, err := http.NewRequest("DELETE", url, bytes.NewBuffer(jsonBody))
-
+	request, err := http.NewRequest("DELETE", c.storageUrl, bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	client := &http.Client{}
 	response, err := client.Do(request)
-
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer response.Body.Close()
 
 	b_byte, err := io.ReadAll(response.Body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	fmt.Println(string(b_byte))
 
-	return "deleted", nil
+	responseBody := jsonResponse{}
+	err = json.Unmarshal(b_byte, &responseBody)
+
+	marshaled2, _ := json.MarshalIndent(responseBody, "", "   ")
+	fmt.Println(string(marshaled2))
+
+	if err != nil {
+		return nil, err
+	}
+
+	return responseBody.Data, nil
 }
