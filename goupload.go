@@ -157,7 +157,13 @@ func (c uploader) UploadFormByte(f interface{}) ([]FileGogo, error) {
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		/* เป็น base 64 */
 		splitNameBase64 := strings.Split(fileString, "base64,")
-		imageDataBase64, _ = base64.StdEncoding.DecodeString(splitNameBase64[1])
+		base64String := ""
+		if len(splitNameBase64) > 1 {
+			base64String = splitNameBase64[1]
+		} else {
+			base64String = splitNameBase64[0]
+		}
+		imageDataBase64, err = base64.StdEncoding.DecodeString(base64String)
 		if err != nil {
 			fmt.Println("ไม่สามารถถอดรหัส Base64 ได้:", err)
 			return nil, err
