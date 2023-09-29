@@ -249,9 +249,6 @@ func (c uploader) DeleteObjects(params DeleteParams) (interface{}, error) {
 	responseBody := jsonResponse{}
 	err = json.Unmarshal(b_byte, &responseBody)
 
-	marshaled2, _ := json.MarshalIndent(responseBody, "", "   ")
-	fmt.Println(string(marshaled2))
-
 	if err != nil {
 		return nil, err
 	}
