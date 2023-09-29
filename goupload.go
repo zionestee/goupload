@@ -209,17 +209,17 @@ func (c uploader) GogoUpload(b []byte, fileHeader *FileGogo) error {
 	}
 	upload := tus.NewUploadFromBytes(b, metadata)
 	uploader, err := c.client.CreateUpload(upload)
-
-	key := strings.Split(uploader.Url(), "/files/")[1]
-	fileHeader.Path = c.storageUrl + key
-
 	if err != nil {
 		return err
 	}
+
 	err = uploader.Upload()
 	if err != nil {
 		return err
 	}
+
+	key := strings.Split(uploader.Url(), "/files/")[1]
+	fileHeader.Path = c.storageUrl + key
 	return nil
 }
 func getFileNameFromURL(url string) string {
