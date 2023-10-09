@@ -54,33 +54,14 @@ type Uploader interface {
 
 func NewUploader(cfg Cfg) Uploader {
 	client, err := tus.NewClient(cfg.EndPoint, nil)
-
 	if err != nil {
 		fmt.Println(err.Error())
 	}
+
 	return uploader{client: client, folder: "", storageUrl: cfg.StorageUrl}
 }
 
 func (c uploader) Upload(params UploadParams) ([]FileGogo, error) {
-
-	f := params.Body
-	c.folder = params.Folder
-	switch f.(type) {
-	case []*multipart.FileHeader:
-		return c.UploadFormFiles(f)
-
-	case *multipart.FileHeader:
-		return c.UploadFormFile(f)
-
-	case string:
-		return c.UploadFormByte(f)
-
-	default:
-		fmt.Printf(":%t", f)
-		return nil, errors.New("file type not supported")
-	}
-}
-func (c uploader) UploadFiles(params UploadParams) ([]FileGogo, error) {
 
 	f := params.Body
 	c.folder = params.Folder
@@ -106,10 +87,13 @@ func (c uploader) UploadFormFile(f interface{}) ([]FileGogo, error) {
 	if !ok {
 		return nil, errors.New("invalid file format")
 	}
-	f2, _ := fileHeader.Open()
-	buf := bytes.NewBuffer(nil)
+	f2, err := fileHeader.Open()
+	if err != nil {
+		return nil, err
+	}
 
-	_, err := io.Copy(buf, f2)
+	buf := bytes.NewBuffer(nil)
+	_, err = io.Copy(buf, f2)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +150,7 @@ func (c uploader) UploadFormByte(f interface{}) ([]FileGogo, error) {
 		imageDataBase64, err = base64.StdEncoding.DecodeString(base64String)
 		if err != nil {
 			fmt.Println("ไม่สามารถถอดรหัส Base64 ได้:", err)
-			return nil, err
+			return nil, errors.New("unable to decode Base64")
 		}
 	} else {
 		/* url */
@@ -176,15 +160,15 @@ func (c uploader) UploadFormByte(f interface{}) ([]FileGogo, error) {
 		}
 		defer response.Body.Close()
 		if response.StatusCode != http.StatusOK {
-			fmt.Printf("ไม่สามารถดาวน์โหลดรูปภาพ สถานะ: %s\n", response.Status)
-			return nil, err
+			return nil, errors.New("downloading images from the source is not possible")
+		}
+
+		imageDataBase64, err = io.ReadAll(response.Body)
+		if err != nil {
+			return nil, errors.New("downloading images from the source is not possible")
 		}
 
 		fileName = getFileNameFromURL(fileString)
-		imageDataBase64, err = io.ReadAll(response.Body)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	contentType := http.DetectContentType(imageDataBase64)
