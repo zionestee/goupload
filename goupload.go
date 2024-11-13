@@ -16,13 +16,12 @@ import (
 )
 
 type uploader struct {
-	client     *tus.Client
-	folder     string
-	storageUrl string
+	client *tus.Client
+	folder string
+	url    string
 }
 type Cfg struct {
 	EndPoint        string
-	StorageUrl      string
 	SecretAccessKey string
 }
 type FileGogo struct {
@@ -36,7 +35,7 @@ type UploadParams struct {
 	Body   interface{}
 }
 type DeleteParams struct {
-	Key []string
+	Key []string `json:"key"`
 }
 type jsonResponse struct {
 	Error string `json:"error,omitempty"`
@@ -57,8 +56,7 @@ func NewUploader(cfg Cfg) Uploader {
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-
-	return uploader{client: client, folder: "", storageUrl: cfg.StorageUrl}
+	return uploader{client: client, folder: "", url: cfg.EndPoint}
 }
 
 func (c uploader) Upload(params UploadParams) ([]FileGogo, error) {
@@ -91,20 +89,17 @@ func (c uploader) UploadFormFile(f interface{}) ([]FileGogo, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	buf := bytes.NewBuffer(nil)
 	_, err = io.Copy(buf, f2)
 	if err != nil {
 		return nil, err
 	}
-
 	ContentType := fileHeader.Header.Values("Content-Type")
 	fileGoHeader := FileGogo{
 		FileName:    fileHeader.Filename,
 		Size:        fileHeader.Size,
 		ContentType: ContentType[0],
 	}
-
 	err = c.GogoUpload(buf.Bytes(), &fileGoHeader)
 	if err != nil {
 		return nil, err
@@ -177,7 +172,10 @@ func (c uploader) UploadFormByte(f interface{}) ([]FileGogo, error) {
 		Size:        int64(len(imageDataBase64)),
 		ContentType: contentType,
 	}
-	c.GogoUpload(imageDataBase64, &fileGoHeader)
+	err = c.GogoUpload(imageDataBase64, &fileGoHeader)
+	if err != nil {
+		return nil, err
+	}
 	meta := []FileGogo{}
 	meta = append(meta, fileGoHeader)
 	fmt.Println("base64 : upload filesuccess !!")
@@ -196,16 +194,10 @@ func (c uploader) GogoUpload(b []byte, fileHeader *FileGogo) error {
 	if err != nil {
 		return err
 	}
-
-	err = uploader.Upload()
-	if err != nil {
-		return err
-	}
-
-	key := strings.Split(uploader.Url(), "/files/")[1]
-	fileHeader.Path = c.storageUrl + key
+	fileHeader.Path = uploader.Url()
 	return nil
 }
+
 func getFileNameFromURL(url string) string {
 	parts := strings.Split(url, "/")
 	return parts[len(parts)-1]
@@ -213,10 +205,12 @@ func getFileNameFromURL(url string) string {
 func (c uploader) DeleteObjects(params DeleteParams) (interface{}, error) {
 
 	jsonBody, _ := json.Marshal(params)
-	request, err := http.NewRequest("DELETE", c.storageUrl, bytes.NewBuffer(jsonBody))
+	request, err := http.NewRequest("DELETE", c.url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return nil, err
 	}
+
+	request.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
 	response, err := client.Do(request)
@@ -224,7 +218,6 @@ func (c uploader) DeleteObjects(params DeleteParams) (interface{}, error) {
 		return nil, err
 	}
 	defer response.Body.Close()
-
 	b_byte, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, err
@@ -235,6 +228,9 @@ func (c uploader) DeleteObjects(params DeleteParams) (interface{}, error) {
 
 	if err != nil {
 		return nil, err
+	}
+	if responseBody.Error != "" {
+		return nil, errors.New(responseBody.Error)
 	}
 
 	return responseBody.Data, nil

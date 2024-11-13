@@ -16,6 +16,7 @@ type Upload struct {
 	size   int64
 	offset int64
 
+	Stream      io.ReadSeeker
 	Fingerprint string
 	Metadata    Metadata
 }
@@ -97,6 +98,7 @@ func NewUpload(reader io.Reader, size int64, metadata Metadata, fingerprint stri
 		stream: stream,
 		size:   size,
 
+		Stream:      stream,
 		Fingerprint: fingerprint,
 		Metadata:    metadata,
 	}

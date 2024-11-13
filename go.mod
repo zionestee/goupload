@@ -1,7 +1,5 @@
-module github.com/zionestee/goupload
+module goupload
 
 go 1.20
 
-require github.com/globalsign/mgo v0.0.0-20181015135952-eeefdecb41b8
-
-require gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
+require github.com/zionestee/goupload v1.1.4

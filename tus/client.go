@@ -1,11 +1,11 @@
 package tus
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
-	netUrl "net/url"
 	"strconv"
 )
 
@@ -22,6 +22,20 @@ type Client struct {
 	Header  http.Header
 
 	client *http.Client
+}
+type jsonResponse struct {
+	Error string    `json:"error,omitempty"`
+	Data  Filestore `json:"data,omitempty"`
+}
+type Filestore struct {
+	Key         string `json:"key,omitempty"`
+	Folder      string `json:"folder,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Size        int64  `json:"size,omitempty"`
+	ContentType string `json:"content-type,omitempty"`
+}
+type DeleteParams struct {
+	Key []string
 }
 
 // NewClient creates a new tus client.
@@ -57,7 +71,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 		req.Header[k] = v
 	}
 
-	req.Header.Set("Tus-Resumable", ProtocolVersion)
+	// req.Header.Set("Tus-Resumable", ProtocolVersion)
 
 	return c.client.Do(req)
 }
@@ -72,7 +86,7 @@ func (c *Client) CreateUpload(u *Upload) (*Uploader, error) {
 		return nil, ErrFingerprintNotSet
 	}
 
-	req, err := http.NewRequest("POST", c.Url, nil)
+	req, err := http.NewRequest("POST", c.Url, u.Stream)
 
 	if err != nil {
 		return nil, err
@@ -82,8 +96,8 @@ func (c *Client) CreateUpload(u *Upload) (*Uploader, error) {
 	req.Header.Set("Upload-Length", strconv.FormatInt(u.size, 10))
 	req.Header.Set("Upload-Metadata", u.EncodedMetadata())
 
-	res, err := c.Do(req)
-
+	client := &http.Client{}
+	res, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -91,18 +105,29 @@ func (c *Client) CreateUpload(u *Upload) (*Uploader, error) {
 
 	switch res.StatusCode {
 	case 201:
-		location := res.Header.Get("Location")
 
-		newURL, err := c.resolveLocationURL(location)
+		b_byte, err := io.ReadAll(res.Body)
 		if err != nil {
 			return nil, err
 		}
-
-		if c.Config.Resume {
-			c.Config.Store.Set(u.Fingerprint, newURL.String())
+		responseBody := jsonResponse{}
+		errMarshal := json.Unmarshal(b_byte, &responseBody)
+		if errMarshal != nil {
+			return nil, errMarshal
 		}
 
-		return NewUploader(c, newURL.String(), u, 0), nil
+		newURL := fmt.Sprintf("%s/%s", c.Url, responseBody.Data.Key)
+		uploader := &Uploader{
+			client:     c,
+			url:        newURL,
+			upload:     u,
+			offset:     0,
+			aborted:    false,
+			uploadSubs: nil,
+			notifyChan: make(chan bool),
+		}
+
+		return uploader, nil
 	case 412:
 		return nil, ErrVersionMismatch
 	case 413:
@@ -110,64 +135,6 @@ func (c *Client) CreateUpload(u *Upload) (*Uploader, error) {
 	default:
 		return nil, newClientError(res)
 	}
-}
-
-func (c *Client) resolveLocationURL(location string) (*netUrl.URL, error) {
-	baseURL, err := netUrl.Parse(c.Url)
-	if err != nil {
-		return nil, fmt.Errorf("Invalid URL '%s'", c.Url)
-	}
-
-	locationURL, err := netUrl.Parse(location)
-	if err != nil {
-		return nil, fmt.Errorf("Invalid Location header value for a Creation '%s': %s", location, err.Error())
-	}
-	newURL := baseURL.ResolveReference(locationURL)
-	return newURL, nil
-}
-
-// ResumeUpload resumes the upload if already created, otherwise it will return an error.
-func (c *Client) ResumeUpload(u *Upload) (*Uploader, error) {
-	if u == nil {
-		return nil, ErrNilUpload
-	}
-
-	if !c.Config.Resume {
-		return nil, ErrResumeNotEnabled
-	} else if len(u.Fingerprint) == 0 {
-		return nil, ErrFingerprintNotSet
-	}
-
-	url, found := c.Config.Store.Get(u.Fingerprint)
-
-	if !found {
-		return nil, ErrUploadNotFound
-	}
-
-	offset, err := c.getUploadOffset(url)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return NewUploader(c, url, u, offset), nil
-}
-
-// CreateOrResumeUpload resumes the upload if already created or creates a new upload in the server.
-func (c *Client) CreateOrResumeUpload(u *Upload) (*Uploader, error) {
-	if u == nil {
-		return nil, ErrNilUpload
-	}
-
-	uploader, err := c.ResumeUpload(u)
-
-	if err == nil {
-		return uploader, err
-	} else if (err == ErrResumeNotEnabled) || (err == ErrUploadNotFound) {
-		return c.CreateUpload(u)
-	}
-
-	return nil, err
 }
 
 func (c *Client) uploadChunck(url string, body io.Reader, size int64, offset int64, Metadata string) (int64, error) {
